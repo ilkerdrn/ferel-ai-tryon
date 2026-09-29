@@ -1,0 +1,307 @@
+<!--
+FEREL / TICIMAX AI VIRTUAL TRY-ON WIDGET
+
+1) Aşağıdaki API_BASE değerini Vercel adresinle değiştir.
+2) Bu kodu ürün detay sayfasında çalışan özel JS/HTML alanına ekle.
+3) Backend .env içindeki ALLOWED_ORIGINS değerinde mağaza domaini olmalı.
+-->
+
+<style>
+#ferelAiTryBtn{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-height:40px;padding:0 18px;margin:10px 0 8px;
+  border:1px solid #ff4164;border-radius:999px;
+  background:#fff;color:#ff4164;font:500 14px/1 inherit;
+  cursor:pointer;transition:.2s ease
+}
+#ferelAiTryBtn:hover{background:#ff4164;color:#fff}
+.ferel-ai-overlay{
+  position:fixed;inset:0;display:none;align-items:center;justify-content:center;
+  padding:18px;background:rgba(0,0,0,.58);z-index:999999
+}
+.ferel-ai-overlay.is-open{display:flex}
+.ferel-ai-modal{
+  width:min(520px,100%);max-height:92vh;overflow:auto;
+  padding:24px;background:#fff;border-radius:20px;position:relative;
+  box-shadow:0 24px 80px rgba(0,0,0,.25)
+}
+.ferel-ai-close{
+  position:absolute;right:14px;top:14px;width:36px;height:36px;
+  border:0;border-radius:50%;background:#f4f4f4;font-size:22px;cursor:pointer
+}
+.ferel-ai-modal h3{margin:0 45px 6px 0;font-size:22px}
+.ferel-ai-sub{margin:0 0 18px;color:#777;font-size:14px;line-height:1.55}
+.ferel-ai-product{
+  display:flex;gap:12px;align-items:center;margin-bottom:16px;padding:10px;
+  border:1px solid #eee;border-radius:14px
+}
+.ferel-ai-product img{width:70px;height:88px;object-fit:cover;border-radius:9px}
+.ferel-ai-product-name{font-weight:600;font-size:14px}
+.ferel-ai-product-code{margin-top:4px;color:#999;font-size:12px}
+.ferel-ai-drop{
+  display:flex;align-items:center;justify-content:center;min-height:180px;
+  padding:16px;border:1.5px dashed #cfcfcf;border-radius:15px;text-align:center;
+  cursor:pointer;overflow:hidden
+}
+.ferel-ai-drop:hover{border-color:#ff4164;background:#fff8fa}
+.ferel-ai-drop img{display:none;width:100%;max-height:360px;object-fit:contain;border-radius:12px}
+.ferel-ai-drop-inner strong{display:block;margin-bottom:5px}
+.ferel-ai-drop-inner span{font-size:12px;color:#888}
+.ferel-ai-mainbtn{
+  width:100%;min-height:46px;margin-top:14px;border:0;border-radius:999px;
+  background:#111;color:#fff;font-weight:600;cursor:pointer
+}
+.ferel-ai-mainbtn:disabled{opacity:.45;cursor:not-allowed}
+.ferel-ai-status{display:none;margin-top:12px;padding:10px 12px;border-radius:10px;background:#f7f7f7;font-size:13px;line-height:1.45}
+.ferel-ai-result{display:none;margin-top:16px}
+.ferel-ai-result img{width:100%;border-radius:14px}
+.ferel-ai-result-actions{display:flex;gap:8px;margin-top:10px}
+.ferel-ai-result-actions button{
+  flex:1;min-height:42px;border-radius:999px;border:1px solid #111;background:#fff;cursor:pointer
+}
+.ferel-ai-result-actions button:first-child{background:#111;color:#fff}
+.ferel-ai-privacy{margin-top:10px;color:#999;font-size:11px;line-height:1.4}
+@media(max-width:600px){.ferel-ai-modal{padding:20px 16px;border-radius:16px}}
+</style>
+
+<script>
+(function(){
+  const API_BASE = "https://YOUR-PROJECT.vercel.app";
+
+  function $(selectors){
+    for(const s of selectors){
+      const el = document.querySelector(s);
+      if(el) return el;
+    }
+    return null;
+  }
+
+  function productTitleElement(){
+    return $([".ProductName",".productName","#divUrunAdi",".UrunDetay h1","h1"]);
+  }
+
+  function productImageUrl(){
+    const img = $([
+      ".cloudzoom",
+      ".CloudZoom",
+      "#imgUrunResim",
+      ".UrunResimleri img",
+      ".productImage img",
+      ".product-detail img",
+      ".productDetailImage img"
+    ]);
+    if(!img) return "";
+    return (
+      img.getAttribute("data-zoom-image") ||
+      img.getAttribute("data-src") ||
+      img.getAttribute("src") ||
+      ""
+    );
+  }
+
+  function absoluteUrl(url){
+    try { return new URL(url, location.href).href; }
+    catch(e){ return url; }
+  }
+
+  function detectCode(text){
+    const m = String(text || "").match(/\(([A-Z0-9_-]+)\)\s*$/i);
+    return m ? m[1] : "";
+  }
+
+  function compressImage(file, maxSide=1280, quality=.84){
+    return new Promise((resolve, reject)=>{
+      const reader = new FileReader();
+      reader.onerror = reject;
+      reader.onload = ()=>{
+        const img = new Image();
+        img.onerror = reject;
+        img.onload = ()=>{
+          let w = img.width, h = img.height;
+          const scale = Math.min(1, maxSide / Math.max(w,h));
+          w = Math.round(w*scale);
+          h = Math.round(h*scale);
+
+          const canvas = document.createElement("canvas");
+          canvas.width = w; canvas.height = h;
+          canvas.getContext("2d").drawImage(img,0,0,w,h);
+
+          canvas.toBlob(
+            blob => {
+              if(!blob) return reject(new Error("Fotoğraf sıkıştırılamadı."));
+              resolve(new File([blob],"person.jpg",{type:"image/jpeg"}));
+            },
+            "image/jpeg",
+            quality
+          );
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function init(){
+    if(document.getElementById("ferelAiTryBtn")) return;
+
+    const titleEl = productTitleElement();
+    if(!titleEl) return;
+
+    const rawTitle = titleEl.textContent.trim();
+    const code = detectCode(rawTitle);
+    const cleanTitle = rawTitle.replace(/\s*\([A-Z0-9_-]+\)\s*$/i,"").trim();
+    const productImg = absoluteUrl(productImageUrl());
+
+    const button = document.createElement("button");
+    button.id = "ferelAiTryBtn";
+    button.type = "button";
+    button.textContent = "AI ile dene";
+    titleEl.insertAdjacentElement("afterend", button);
+
+    const overlay = document.createElement("div");
+    overlay.className = "ferel-ai-overlay";
+    overlay.innerHTML = `
+      <div class="ferel-ai-modal">
+        <button class="ferel-ai-close" type="button">×</button>
+        <h3>AI ile üzerinde dene</h3>
+        <p class="ferel-ai-sub">Fotoğrafını yükle, bu ürünü üzerinde yapay zekâ ile görüntüle.</p>
+
+        <div class="ferel-ai-product">
+          ${productImg ? `<img src="${productImg}" alt="">` : ""}
+          <div>
+            <div class="ferel-ai-product-name">${cleanTitle}</div>
+            ${code ? `<div class="ferel-ai-product-code">${code}</div>` : ""}
+          </div>
+        </div>
+
+        <label class="ferel-ai-drop" for="ferelAiPhoto">
+          <div class="ferel-ai-drop-inner">
+            <strong>Fotoğrafını yükle</strong>
+            <span>Önden çekilmiş, vücudun görüldüğü bir fotoğraf en iyi sonucu verir.</span>
+          </div>
+          <img class="ferel-ai-preview" alt="Önizleme">
+          <input id="ferelAiPhoto" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+        </label>
+
+        <button class="ferel-ai-mainbtn" type="button" disabled>Denemeyi Başlat</button>
+        <div class="ferel-ai-status"></div>
+
+        <div class="ferel-ai-result">
+          <img class="ferel-ai-result-img" alt="AI sanal deneme sonucu">
+          <div class="ferel-ai-result-actions">
+            <button class="ferel-ai-retry" type="button">Tekrar dene</button>
+            <button class="ferel-ai-close-result" type="button">Kapat</button>
+          </div>
+        </div>
+
+        <div class="ferel-ai-privacy">
+          Fotoğrafınız yalnızca sanal deneme sonucunu üretmek amacıyla işlenir.
+          Canlıya almadan önce KVKK/Aydınlatma metninizi bu özelliği kapsayacak şekilde güncelleyin.
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const input = overlay.querySelector("#ferelAiPhoto");
+    const preview = overlay.querySelector(".ferel-ai-preview");
+    const dropInner = overlay.querySelector(".ferel-ai-drop-inner");
+    const start = overlay.querySelector(".ferel-ai-mainbtn");
+    const status = overlay.querySelector(".ferel-ai-status");
+    const resultBox = overlay.querySelector(".ferel-ai-result");
+    const resultImg = overlay.querySelector(".ferel-ai-result-img");
+
+    function open(){ overlay.classList.add("is-open"); document.body.style.overflow="hidden"; }
+    function close(){ overlay.classList.remove("is-open"); document.body.style.overflow=""; }
+
+    button.addEventListener("click", open);
+    overlay.querySelector(".ferel-ai-close").addEventListener("click", close);
+    overlay.querySelector(".ferel-ai-close-result").addEventListener("click", close);
+    overlay.addEventListener("click", e=>{ if(e.target===overlay) close(); });
+
+    input.addEventListener("change", ()=>{
+      const file = input.files && input.files[0];
+      if(!file) return;
+      if(!["image/jpeg","image/png","image/webp"].includes(file.type)){
+        alert("JPG, PNG veya WEBP fotoğraf yükleyin.");
+        input.value="";
+        return;
+      }
+      if(file.size > 12*1024*1024){
+        alert("Fotoğraf 12 MB'dan küçük olmalı.");
+        input.value="";
+        return;
+      }
+      preview.src = URL.createObjectURL(file);
+      preview.style.display = "block";
+      dropInner.style.display = "none";
+      start.disabled = false;
+      resultBox.style.display = "none";
+      status.style.display = "none";
+    });
+
+    start.addEventListener("click", async ()=>{
+      try{
+        if(API_BASE.includes("YOUR-PROJECT")){
+          alert("Önce kodun başındaki API_BASE adresini Vercel URL'inizle değiştirin.");
+          return;
+        }
+
+        const original = input.files && input.files[0];
+        if(!original) return;
+
+        if(!productImg){
+          throw new Error("Ürün görseli otomatik bulunamadı.");
+        }
+
+        start.disabled = true;
+        start.textContent = "AI hazırlanıyor...";
+        status.style.display = "block";
+        status.textContent = "Fotoğraf hazırlanıyor ve yapay zekâya gönderiliyor. Bu işlem birkaç saniye sürebilir.";
+        resultBox.style.display = "none";
+
+        const personFile = await compressImage(original);
+
+        const fd = new FormData();
+        fd.append("personImage", personFile);
+        fd.append("productImageUrl", productImg);
+        fd.append("productCode", code);
+        fd.append("productName", cleanTitle);
+
+        const res = await fetch(API_BASE + "/api/try-on", {
+          method: "POST",
+          body: fd
+        });
+
+        const data = await res.json().catch(()=>({}));
+
+        if(!res.ok || !data.ok){
+          throw new Error(data.error || "AI denemesi oluşturulamadı.");
+        }
+
+        resultImg.src = data.imageUrl;
+        resultBox.style.display = "block";
+        status.textContent = "Hazır.";
+      }catch(err){
+        console.error("FEREL_AI_TRYON", err);
+        status.style.display = "block";
+        status.textContent = err.message || "Bir hata oluştu.";
+      }finally{
+        start.disabled = false;
+        start.textContent = "Tekrar Oluştur";
+      }
+    });
+
+    overlay.querySelector(".ferel-ai-retry").addEventListener("click", ()=>{
+      resultBox.style.display = "none";
+      status.style.display = "none";
+      input.click();
+    });
+  }
+
+  if(document.readyState === "loading"){
+    document.addEventListener("DOMContentLoaded", ()=>setTimeout(init,700));
+  }else{
+    setTimeout(init,700);
+  }
+})();
+</script>
