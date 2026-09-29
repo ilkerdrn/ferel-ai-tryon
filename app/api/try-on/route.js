@@ -171,19 +171,22 @@ export async function POST(request) {
       fal.storage.upload(productFile)
     ]);
 
-    const model =
-      process.env.FAL_MODEL ||
-      "fal-ai/image-apps-v2/virtual-try-on";
+const model =
+  process.env.FAL_MODEL ||
+  "fal-ai/fashn/tryon/v1.6";
 
-    const result = await fal.subscribe(model, {
-      input: {
-        person_image_url: personUrl,
-        clothing_image_url: clothingUrl,
-        preserve_pose: true
-      },
-      logs: false
-    });
-
+const result = await fal.subscribe(model, {
+  input: {
+    model_image: personUrl,
+    garment_image: clothingUrl,
+    category: "auto",
+    garment_photo_type: "model",
+    mode: "quality",
+    num_samples: 1,
+    output_format: "png"
+  },
+  logs: false
+});
     const imageUrl = result?.data?.images?.[0]?.url;
 
     if (!imageUrl) {
