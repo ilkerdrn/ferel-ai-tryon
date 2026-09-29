@@ -114,3 +114,5 @@ MVP çalıştıktan sonra bunları eklemek önerilir:
 
 Model:
 https://fal.ai/models/fal-ai/image-apps-v2/virtual-try-on/api
+
+Vercel deployment trigger
